@@ -11,7 +11,7 @@ app = FastAPI(title="Finance API")
 # -------------------- CORS --------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # change later if needed
+    allow_origins=["*"],  # restrict later
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -19,7 +19,6 @@ app.add_middleware(
 
 # -------------------- DATABASE --------------------
 DATABASE_URL = os.getenv("DATABASE_URL")
-
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set")
 
@@ -38,6 +37,26 @@ class Expense(BaseModel):
 class ExpenseOut(Expense):
     id: int
     date_created: str
+
+# -------------------- STARTUP: CREATE TABLE --------------------
+@app.on_event("startup")
+def create_table():
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    CREATE TABLE IF NOT EXISTS expenses (
+                        id SERIAL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        amount NUMERIC NOT NULL,
+                        category TEXT NOT NULL,
+                        date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                conn.commit()
+        print("✅ expenses table ready")
+    except Exception as e:
+        print("❌ Table creation failed:", e)
 
 # -------------------- HEALTH CHECK --------------------
 @app.get("/")
@@ -59,7 +78,6 @@ def get_expenses():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @app.post("/expenses", status_code=status.HTTP_201_CREATED)
 def add_expense(expense: Expense):
     try:
@@ -78,7 +96,6 @@ def add_expense(expense: Expense):
                 return {"status": "success", "id": expense_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.put("/expenses/{expense_id}")
 def update_expense(expense_id: int, expense: Expense):
@@ -101,7 +118,6 @@ def update_expense(expense_id: int, expense: Expense):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 @app.delete("/expenses/{expense_id}")
 def delete_expense(expense_id: int):
