@@ -1,157 +1,142 @@
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
-from typing import List
 import os
+from dotenv import load_dotenv
 
-# --------------------------------------------------
-# APP
-# --------------------------------------------------
-app = FastAPI(title="Finance API")
+# Load environment variables from .env
+load_dotenv()
 
-# --------------------------------------------------
-# CORS (Frontend → Backend)
-# --------------------------------------------------
+app = FastAPI()
+
+# Enable CORS for React
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://finance-1-wt2p.onrender.com"  # your frontend
-    ],
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# --------------------------------------------------
-# DATABASE
-# --------------------------------------------------
+# Read DATABASE_URL from environment
 DATABASE_URL = os.getenv("DATABASE_URL")
+
 if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL is not set")
+    raise RuntimeError("DATABASE_URL not found in environment variables")
 
-def get_connection():
-    return psycopg2.connect(
-        DATABASE_URL,
-        sslmode="require"
-    )
+# -------------------- MODELS --------------------
 
-# --------------------------------------------------
-# MODELS
-# --------------------------------------------------
 class Expense(BaseModel):
     title: str
     amount: float
     category: str
 
-class ExpenseOut(Expense):
-    id: int
-    date_created: str
+# -------------------- DB CONNECTION --------------------
 
+def get_connection():
+    return psycopg2.connect(DATABASE_URL)
 
-@app.get("/debug/db")
-def debug_db():
+# -------------------- TABLE CREATION --------------------
+
+def create_expenses_table():
+    conn = None
     try:
-        with get_connection() as conn:
-            return {"db": "connected"}
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS expenses (
+                id SERIAL PRIMARY KEY,
+                title TEXT NOT NULL,
+                amount NUMERIC(10,2) NOT NULL,
+                category TEXT NOT NULL,
+                date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.commit()
+        cur.close()
+        print("✅ expenses table checked/created")
     except Exception as e:
-        return {"db_error": str(e)}
+        print("❌ Error creating table:", e)
+    finally:
+        if conn:
+            conn.close()
 
-# --------------------------------------------------
-# STARTUP: CREATE TABLE
-# --------------------------------------------------
 @app.on_event("startup")
-def create_table():
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS expenses (
-                        id SERIAL PRIMARY KEY,
-                        title TEXT NOT NULL,
-                        amount NUMERIC NOT NULL,
-                        category TEXT NOT NULL,
-                        date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
-                conn.commit()
-        print("✅ expenses table ready")
-    except Exception as e:
-        print("❌ table creation failed:", e)
+def startup_event():
+    create_expenses_table()
 
-# --------------------------------------------------
-# HEALTH CHECK
-# --------------------------------------------------
-@app.get("/")
-def health():
-    return {"status": "ok"}
+# -------------------- ROUTES --------------------
 
-# --------------------------------------------------
-# ROUTES
-# --------------------------------------------------
-@app.get("/expenses", response_model=List[ExpenseOut])
+@app.get("/expenses")
 def get_expenses():
+    conn = None
     try:
-        with get_connection() as conn:
-            with conn.cursor(cursor_factory=RealDictCursor) as cur:
-                cur.execute("""
-                    SELECT id, title, amount, category, date_created
-                    FROM expenses
-                    ORDER BY date_created DESC
-                """)
-                return cur.fetchall()
+        conn = get_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(
+            "SELECT id, title, amount, category, date_created FROM expenses ORDER BY id DESC"
+        )
+        data = cur.fetchall()
+        cur.close()
+        return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
 
-@app.post("/expenses", status_code=status.HTTP_201_CREATED)
+@app.post("/expenses")
 def add_expense(expense: Expense):
+    conn = None
     try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    INSERT INTO expenses (title, amount, category)
-                    VALUES (%s, %s, %s)
-                    RETURNING id
-                """, (expense.title, expense.amount, expense.category))
-                new_id = cur.fetchone()[0]
-                conn.commit()
-                return {"status": "success", "id": new_id}
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO expenses (title, amount, category) VALUES (%s, %s, %s)",
+            (expense.title, expense.amount, expense.category),
+        )
+        conn.commit()
+        cur.close()
+        return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
 
 @app.put("/expenses/{expense_id}")
 def update_expense(expense_id: int, expense: Expense):
+    conn = None
     try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""
-                    UPDATE expenses
-                    SET title=%s, amount=%s, category=%s
-                    WHERE id=%s
-                """, (expense.title, expense.amount, expense.category, expense_id))
-
-                if cur.rowcount == 0:
-                    raise HTTPException(status_code=404, detail="Expense not found")
-
-                conn.commit()
-                return {"status": "updated"}
-    except HTTPException:
-        raise
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE expenses SET title=%s, amount=%s, category=%s WHERE id=%s",
+            (expense.title, expense.amount, expense.category, expense_id),
+        )
+        conn.commit()
+        cur.close()
+        return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
 
 @app.delete("/expenses/{expense_id}")
 def delete_expense(expense_id: int):
+    conn = None
     try:
-        with get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM expenses WHERE id=%s", (expense_id,))
-                if cur.rowcount == 0:
-                    raise HTTPException(status_code=404, detail="Expense not found")
-                conn.commit()
-                return {"status": "deleted"}
-    except HTTPException:
-        raise
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM expenses WHERE id = %s", (expense_id,))
+        conn.commit()
+        cur.close()
+        return {"status": "deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if conn:
+            conn.close()
+# -------------------- END OF FILE --------------------
