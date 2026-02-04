@@ -1,6 +1,24 @@
-import axios from 'axios';
+import axios from "axios";
 
-const API_URL = 'https://finance-lz2e.onrender.com';
+const API = axios.create({
+  baseURL: "https://finance-lz2e.onrender.com",
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
 
-export const fetchExpenses = () => axios.get(`${API_URL}/expenses`);
-export const createExpense = (data) => axios.post(`${API_URL}/expenses`, data);
+// GET expenses
+export const getExpenses = async () => {
+  const res = await API.get("/expenses");
+  return res.data;
+};
+
+// ADD expense
+export const addExpense = async (expense) => {
+  return await API.post("/expenses", expense);
+};
+
+// DELETE expense
+export const deleteExpense = async (id) => {
+  return await API.delete(`/expenses/${id}`);
+};
