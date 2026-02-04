@@ -6,18 +6,27 @@ from pydantic import BaseModel
 from typing import List
 import os
 
+# --------------------------------------------------
+# APP
+# --------------------------------------------------
 app = FastAPI(title="Finance API")
 
-# -------------------- CORS --------------------
+# --------------------------------------------------
+# CORS (Frontend → Backend)
+# --------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # restrict later
+    allow_origins=[
+        "https://finance-1-wt2p.onrender.com"  # your frontend
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# -------------------- DATABASE --------------------
+# --------------------------------------------------
+# DATABASE
+# --------------------------------------------------
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is not set")
@@ -25,10 +34,12 @@ if not DATABASE_URL:
 def get_connection():
     return psycopg2.connect(
         DATABASE_URL,
-        sslmode="require"  # REQUIRED for Render PostgreSQL
+        sslmode="require"
     )
 
-# -------------------- MODELS --------------------
+# --------------------------------------------------
+# MODELS
+# --------------------------------------------------
 class Expense(BaseModel):
     title: str
     amount: float
@@ -38,7 +49,9 @@ class ExpenseOut(Expense):
     id: int
     date_created: str
 
-# -------------------- STARTUP: CREATE TABLE --------------------
+# --------------------------------------------------
+# STARTUP: CREATE TABLE
+# --------------------------------------------------
 @app.on_event("startup")
 def create_table():
     try:
@@ -56,14 +69,18 @@ def create_table():
                 conn.commit()
         print("✅ expenses table ready")
     except Exception as e:
-        print("❌ Table creation failed:", e)
+        print("❌ table creation failed:", e)
 
-# -------------------- HEALTH CHECK --------------------
+# --------------------------------------------------
+# HEALTH CHECK
+# --------------------------------------------------
 @app.get("/")
 def health():
     return {"status": "ok"}
 
-# -------------------- ROUTES --------------------
+# --------------------------------------------------
+# ROUTES
+# --------------------------------------------------
 @app.get("/expenses", response_model=List[ExpenseOut])
 def get_expenses():
     try:
@@ -83,17 +100,14 @@ def add_expense(expense: Expense):
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
+                cur.execute("""
                     INSERT INTO expenses (title, amount, category)
                     VALUES (%s, %s, %s)
                     RETURNING id
-                    """,
-                    (expense.title, expense.amount, expense.category)
-                )
-                expense_id = cur.fetchone()[0]
+                """, (expense.title, expense.amount, expense.category))
+                new_id = cur.fetchone()[0]
                 conn.commit()
-                return {"status": "success", "id": expense_id}
+                return {"status": "success", "id": new_id}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -102,16 +116,15 @@ def update_expense(expense_id: int, expense: Expense):
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    """
+                cur.execute("""
                     UPDATE expenses
                     SET title=%s, amount=%s, category=%s
                     WHERE id=%s
-                    """,
-                    (expense.title, expense.amount, expense.category, expense_id)
-                )
+                """, (expense.title, expense.amount, expense.category, expense_id))
+
                 if cur.rowcount == 0:
                     raise HTTPException(status_code=404, detail="Expense not found")
+
                 conn.commit()
                 return {"status": "updated"}
     except HTTPException:
@@ -124,10 +137,7 @@ def delete_expense(expense_id: int):
     try:
         with get_connection() as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    "DELETE FROM expenses WHERE id=%s",
-                    (expense_id,)
-                )
+                cur.execute("DELETE FROM expenses WHERE id=%s", (expense_id,))
                 if cur.rowcount == 0:
                     raise HTTPException(status_code=404, detail="Expense not found")
                 conn.commit()
