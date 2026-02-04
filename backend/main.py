@@ -37,7 +37,11 @@ class Expense(BaseModel):
 # -------------------- DB CONNECTION --------------------
 
 def get_connection():
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg2.connect(
+        DATABASE_URL,
+        sslmode="require"
+    )
+
 
 # -------------------- TABLE CREATION --------------------
 
