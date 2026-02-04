@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const API_URL = 'https://finance-366p.onrender.com/expenses';
+const API_URL = 'https://finance-lz2e.onrender.com';
 
 function App() {
   const [expenses, setExpenses] = useState([]);
