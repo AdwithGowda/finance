@@ -49,6 +49,15 @@ class ExpenseOut(Expense):
     id: int
     date_created: str
 
+
+@app.get("/debug/db")
+def debug_db():
+    try:
+        with get_connection() as conn:
+            return {"db": "connected"}
+    except Exception as e:
+        return {"db_error": str(e)}
+
 # --------------------------------------------------
 # STARTUP: CREATE TABLE
 # --------------------------------------------------
