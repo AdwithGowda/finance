@@ -14,11 +14,13 @@ app = FastAPI()
 # Enable CORS for React
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://finance-1-wt2p.onrender.com",  # React frontend
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # Read DATABASE_URL from environment
 DATABASE_URL = os.getenv("DATABASE_URL")
 
