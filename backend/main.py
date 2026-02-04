@@ -3,25 +3,23 @@ from fastapi.middleware.cors import CORSMiddleware
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from pydantic import BaseModel
-from typing import List
+import os
 
 app = FastAPI()
 
 # Enable CORS for React
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Database configuration
-DB_CONFIG = {
-    "host": "localhost",
-    "database": "finance_db",
-    "user": "postgres",
-    "password": "1234" 
-}
+# Load DATABASE_URL from environment (Render)
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set")
 
 class Expense(BaseModel):
     title: str
@@ -29,7 +27,10 @@ class Expense(BaseModel):
     category: str
 
 def get_connection():
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(
+        DATABASE_URL,
+        sslmode="require"  # REQUIRED for Render PostgreSQL
+    )
 
 @app.get("/expenses")
 def get_expenses():
@@ -37,14 +38,19 @@ def get_expenses():
     try:
         conn = get_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT id, title, amount, category, date_created FROM expenses ORDER BY date_created DESC")
+        cur.execute("""
+            SELECT id, title, amount, category, date_created
+            FROM expenses
+            ORDER BY date_created DESC
+        """)
         data = cur.fetchall()
         cur.close()
         return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if conn: conn.close()
+        if conn:
+            conn.close()
 
 @app.post("/expenses")
 def add_expense(expense: Expense):
@@ -62,7 +68,8 @@ def add_expense(expense: Expense):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if conn: conn.close()
+        if conn:
+            conn.close()
 
 @app.put("/expenses/{expense_id}")
 def update_expense(expense_id: int, expense: Expense):
@@ -71,7 +78,11 @@ def update_expense(expense_id: int, expense: Expense):
         conn = get_connection()
         cur = conn.cursor()
         cur.execute(
-            "UPDATE expenses SET title=%s, amount=%s, category=%s WHERE id=%s",
+            """
+            UPDATE expenses
+            SET title=%s, amount=%s, category=%s
+            WHERE id=%s
+            """,
             (expense.title, expense.amount, expense.category, expense_id)
         )
         conn.commit()
@@ -80,7 +91,8 @@ def update_expense(expense_id: int, expense: Expense):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if conn: conn.close()
+        if conn:
+            conn.close()
 
 @app.delete("/expenses/{expense_id}")
 def delete_expense(expense_id: int):
@@ -95,4 +107,5 @@ def delete_expense(expense_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if conn: conn.close()
+        if conn:
+            conn.close()
