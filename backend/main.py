@@ -11,6 +11,9 @@ load_dotenv()
 
 app = FastAPI()
 
+@app.get("/")
+def root():
+    return {"status": "MyWallet API running"}
 # Enable CORS for React
 app.add_middleware(
     CORSMiddleware,
